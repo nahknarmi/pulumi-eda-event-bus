@@ -4,22 +4,27 @@ import * as awsx from "@pulumi/awsx";
 import {BucketObject} from "@pulumi/aws/s3";
 import {FileAsset} from "@pulumi/pulumi/asset";
 
+
 // Create an AWS resource (S3 Bucket)
-const bucket = new aws.s3.Bucket("my-bucket", {
-    website: {
-        indexDocument: "index.html"
-    }
+const fileLandingZone = new aws.s3.Bucket("file-landing-zone", {
 });
 
 // Export the name of the bucket
-export const bucketName = bucket.id;
+export const bucketName = fileLandingZone.id;
 
+// When a new thumbnail is created, log a message.
+fileLandingZone.onObjectCreated("onNewDepositoryFile", new aws.lambda.CallbackFunction<aws.s3.BucketEvent, void>("onNewDepositoryFile", {
+    callback: async bucketArgs => {
+        console.log("onNewDepositoryFile called");
+        if (!bucketArgs.Records) {
+            return;
+        }
 
-new BucketObject("index.html", {
-    acl: "public-read",
-    contentType: "text/html",
-    bucket: bucket,
-    source: new FileAsset("index.html")
-})
-
-export const bucketEndpoint = pulumi.interpolate`http://${bucket.websiteEndpoint}`;
+        for (const record of bucketArgs.Records) {
+            console.log(`*** New Depository: file ${record.s3.object.key} was saved at ${record.eventTime}.`);
+        }
+    },
+    policies: [
+        aws.iam.ManagedPolicy.AWSLambdaExecute,                 // Provides wide access to Lambda and S3
+    ],
+}), { filterSuffix: ".csv" });
