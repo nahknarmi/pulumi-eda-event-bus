@@ -56,9 +56,9 @@ let subnetAz3 = new Subnet("subnetAz3", {
 let securityGroup = new SecurityGroup("msk", {vpcId: vpc.id});
 let key = new Key("msk-key", {description: "example"});
 let logGroup = new LogGroup("test");
-let bucket = new BucketV2("bucket", {});
+let mskLogsBucket = new BucketV2("mskLogBucket", {});
 let bucketAcl = new BucketAclV2("bucketAcl", {
-    bucket: bucket.id,
+    bucket: mskLogsBucket.id,
     acl: "private"
 });
 const firehoseRole = new aws.iam.Role("firehoseRole", {
@@ -81,23 +81,23 @@ let testStream = new FirehoseDeliveryStream("testStream", {
     destination: "s3",
     s3Configuration: {
         roleArn: firehoseRole.arn,
-        bucketArn: bucket.arn
+        bucketArn: mskLogsBucket.arn
     },
     tags: {
         LogDeliveryEnabled: "placeholder"
     }
 });
 
-let cluster = new Cluster("example", {
+let cluster = new Cluster("my-kafka", {
     kafkaVersion: "2.8.1",
-    numberOfBrokerNodes: 1,
+    numberOfBrokerNodes: 2,
     brokerNodeGroupInfo: {
         instanceType: "kafka.t3.small",
         ebsVolumeSize: 30,
         clientSubnets: [
             subnetAz1.id,
             subnetAz2.id,
-            subnetAz3.id
+            // subnetAz3.id
         ],
         securityGroups: [securityGroup.id],
     },
@@ -126,7 +126,7 @@ let cluster = new Cluster("example", {
             },
             s3: {
                 enabled: true,
-                bucket: bucket.id,
+                bucket: mskLogsBucket.id,
                 prefix: "logs/msk-"
             }
         },
