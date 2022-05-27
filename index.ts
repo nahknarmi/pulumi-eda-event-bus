@@ -1,59 +1,20 @@
 import * as aws from "@pulumi/aws";
 import {BucketAclV2, BucketV2} from "@pulumi/aws/s3";
-import {SecurityGroup, Subnet, Vpc} from "@pulumi/aws/ec2";
+import {SecurityGroup} from "@pulumi/aws/ec2";
 import {Key} from "@pulumi/aws/kms";
 import {LogGroup} from "@pulumi/aws/cloudwatch";
 import {FirehoseDeliveryStream} from "@pulumi/aws/kinesis";
 import {Cluster} from "@pulumi/aws/msk";
+import * as pulumi from "@pulumi/pulumi";
 
 
-// Create an AWS resource (S3 Bucket)
-const fileLandingZone = new aws.s3.Bucket("file-landing-zone", {});
+const config = new pulumi.Config();
+const stack = pulumi.getStack();
+const org = config.require("org");
 
-// Export the name of the bucket
-export const bucketName = fileLandingZone.id;
+const baseStackRef = new pulumi.StackReference(`nahknarmi/pulumi-eda-base`)
 
-// When a new thumbnail is created, log a message.
-fileLandingZone.onObjectCreated("onNewDepositoryFile", new aws.lambda.CallbackFunction<aws.s3.BucketEvent, void>("onNewDepositoryFile", {
-    callback: async bucketArgs => {
-        console.log("onNewDepositoryFile called");
-        if (!bucketArgs.Records) {
-            return;
-        }
-
-        for (const record of bucketArgs.Records) {
-            console.log(`*** New Depository: file ${record.s3.object.key} was saved at ${record.eventTime}.`);
-        }
-    },
-    policies: [
-        aws.iam.ManagedPolicy.AWSLambdaExecute,                 // Provides wide access to Lambda and S3
-    ],
-}), {filterSuffix: ".csv"});
-
-
-let vpc = new Vpc("vpc", {cidrBlock: "192.168.0.0/22"});
-let availabilityZones = aws.getAvailabilityZones({state: "available"});
-
-
-let subnetAz1 = new Subnet("subnetAz1", {
-    availabilityZone: availabilityZones.then(azs => azs.names[0]),
-    cidrBlock: "192.168.0.0/24",
-    vpcId: vpc.id
-});
-
-let subnetAz2 = new Subnet("subnetAz2", {
-    availabilityZone: availabilityZones.then(azs => azs.names[1]),
-    cidrBlock: "192.168.1.0/24",
-    vpcId: vpc.id
-});
-
-let subnetAz3 = new Subnet("subnetAz3", {
-    availabilityZone: availabilityZones.then(azs => azs.names[3]),
-    cidrBlock: "192.168.2.0/24",
-    vpcId: vpc.id
-});
-
-let securityGroup = new SecurityGroup("msk", {vpcId: vpc.id});
+let securityGroup = new SecurityGroup("msk", {vpcId: baseStackRef.getOutput("vpcId")});
 let key = new Key("msk-key", {description: "example"});
 let logGroup = new LogGroup("test");
 let mskLogsBucket = new BucketV2("mskLogBucket", {});
@@ -95,9 +56,9 @@ let cluster = new Cluster("my-kafka", {
         instanceType: "kafka.t3.small",
         ebsVolumeSize: 30,
         clientSubnets: [
-            subnetAz1.id,
-            subnetAz2.id,
-            // subnetAz3.id
+            baseStackRef.getOutput("subnetAz1Id"),
+            baseStackRef.getOutput("subnetAz2Id"),
+            // baseStackRef.getOutput("subnetAz3Id")
         ],
         securityGroups: [securityGroup.id],
     },
@@ -138,5 +99,3 @@ let cluster = new Cluster("my-kafka", {
 
 export const zookeeperConnectString = cluster.zookeeperConnectString;
 export const bootstrapBrokersTls = cluster.bootstrapBrokersTls;
-
-
